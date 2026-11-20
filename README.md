@@ -1,0 +1,145 @@
+# WQC Fall 2026 — Scavenger toolkit
+
+Tools for the **Scavenger** game (packet pp. 5–7): a Bayesian estimator for the pool size `p`,
+a playable simulator of the game, and a Monte Carlo harness to compare strategies.
+
+```bash
+pip install -r requirements.txt
+python -m scavenger.play --hints                 # play 5 rounds against bots, with the model's suggestions
+python -m scavenger.play --sequential            # same, buying samples one at a time
+python -m scavenger.make_table --trials 2000     # (re)build the batch "how many samples" table
+python -m scavenger.montecarlo -s "bayes:n=1" "bayes:n=3" "bayes:n=table" "naive:n=3" -r 400
+python -m scavenger.advisor                      # competition-day helper: type in what the game shows you
+```
+
+## Layout
+
+| file | what it does |
+|---|---|
+| `scavenger/families.py` | The 5 distribution families, vectorised pdf / quantile / sampling, and **the prior** (`PriorConfig`). |
+| `scavenger/posterior.py` | The weighted bag of scenarios (particles): fit to samples, turn percentile into `p`, Bayes-optimal final guess, reweighting. |
+| `scavenger/auction.py` | Exact payout rule, crude opponent model, best-bid search, and learning about `p` from your auction rank/payout. |
+| `scavenger/sampling.py` | Batch table (pick `n` up front) and sequential lookahead (buy one more?). |
+| `scavenger/game.py` | Game engine: hidden setup, bots, 3 auctions, final guess, round points and ranking. |
+| `scavenger/strategies.py` | Strategies as spec strings (`bayes:n=3,bid=model`, `naive:n=3`, ...). |
+| `scavenger/montecarlo.py` | Runs strategies on identical rounds and reports mean placement, points/p, etc. |
+| `scavenger/play.py` | Interactive terminal game. |
+| `scavenger/advisor.py` | Live helper for the real game. |
+| `tables/batch_table.*` | Output of `make_table`: best `n` per percentile bucket. |
+
+## How the estimator works
+
+**Scenarios.** Each particle is one full guess at the hidden setup — a family, its parameters —
+plus a weight. Every family is written as a base scale `M` (log-uniform prior) times dimensionless
+shapes (uniform priors), so the problem is scale-free and a table computed "as a fraction of p"
+holds at any pool size.
+
+**Samples → weights.** For the four continuous families the bag is built by adaptive importance
+sampling: propose around the data, fit a Gaussian to the weighted particles, re-propose (3 passes),
+so the particles sit where the posterior is even when it is narrow. Two-point is handled exactly:
+samples show 1 distinct value (it was `L` or it was `H`), 2 values (`L`,`H` pinned), or 3+ (ruled out).
+Samples are treated as **rounded to integers** (`delta=1`), which is what makes two identical samples
+strong evidence for two-point. Each family's evidence `P(samples | family)` gives the family probabilities.
+
+**Percentile → p.** The displayed percentile `k` is rounded, so the true quantile is in
+`[k-0.5, k+0.5]%` (a 1-point-wide window). Each particle gets `p = F⁻¹(q)` with `q` uniform in that
+window. The percentile itself carries no information about the parameters (it is uniform whatever
+they are), so it does not reweight anything.
+
+**Final guess.** Maximise `E[max(p/4 − |g−p|, 0)]` over `g` across the bag (grid + refine). This is
+not the mean or median: it is the centre of the densest window of half-width ≈ p/4.
+
+**Auction updates.** After each auction, for every particle simulate the opponents under the
+opponent model and ask how likely your observed (rank, payout) was; reweight. A floor keeps any
+particle from being wiped out, because the opponent model is crude.
+
+### The prior is a guess — the biggest risk
+
+The organisers did not publish parameter ranges. Defaults in `PriorConfig` (`families.py`):
+`M ∈ [50, 5000]` log-uniform; normal `σ/μ ∈ [0.05, 0.4]`; uniform half-width `∈ [0.05, 0.9]·M`;
+shifted-exp mean excess `∈ [0.05, 1]·M`; two-hump separation `±[0.1, 0.7]·M`, hump σ `∈ [0.03, 0.25]·M`;
+two-point `L = M(1−[0.1,0.8])`, `H = M(1+[0.1,1.5])`, `P(L) ∈ [0.2, 0.8]`.
+With 1 sample the prior on the *shape* is all you have to turn the percentile into `p`, so this matters
+most when `n` is small. `GameConfig.truth_prior` and the strategy's `prior` are separate, so you can test
+robustness by simulating truths from a different prior than the estimator assumes.
+
+## a) How many samples: batch table
+
+`python -m scavenger.make_table` simulates, for each `n = 0..10` on the same hidden setups,
+the Bayes-optimal guess score as a fraction of `p`, split by displayed percentile, and subtracts `√n/12`.
+`--mult X` values accuracy in the auctions at `X` times its value in the final guess (tune with the
+harness). Current output is in `tables/batch_table.txt`; `bayes:n=table` uses it.
+
+### Converting to one-at-a-time buying (if the organisers allow it)
+
+The packet only says you "buy n samples" for `√n/12 · p`. **Ask the organisers whether you can buy one,
+look, then buy more.** If you can, nothing in the estimator changes — only the stopping rule:
+
+1. Buy a starting number `n0` (the batch table's answer for your percentile minus 1 or 2 is a sensible start; `n0=2` is the default).
+2. After each sample, run `lookahead_decision` (already implemented in `sampling.py`): draw scenarios
+   from the bag, simulate 1, 2 and 3 more samples from each, refit, and compute the expected guess score.
+   Gain(k) = that − the current expected score, times `(1 + mult)`.
+3. Cost(k) = `(√(n+k) − √n)/12 · E[p]` (e.g. the 4th sample costs 2.3% of `p`).
+4. Buy one more if `Gain(k) > Cost(k)` for *any* k ≤ 3 (checking k > 1 avoids stopping just before the
+   sample that would separate, say, normal from uniform). Otherwise stop.
+5. Total cost depends only on the final `n`, so buying one at a time never costs more than buying the same
+   `n` at once — the only cost is the 60 s clock (each lookahead takes a few seconds; `K` and
+   `n_particles` trade speed for accuracy).
+
+Try it: `python -m scavenger.play --sequential --hints`, or in the harness `bayes:seq=1,n0=2`.
+
+## b) The game simulator
+
+`game.py` follows the packet: percentile shown, samples bought at `√n/12·p`, three auctions with the exact
+payout rule, final guess scored `max(p/4 − |g−p|, 0)`, round total `r1 + r2 + 2·r3 + g − p√n/12`,
+rank in a room of 6–7 (×0.875 in rooms of 7), ties share the mean rank.
+
+**Bots are crude placeholders.** Each bot buys 1–4 samples, gets an estimate `p̂ = p·exp(N(0, 0.35/√n))`,
+bids `p̂ · U(lo, hi) + b` every auction (defaults `lo=0, hi=0.5, b=0`; change with `--bot-lo/--bot-hi/--bot-b`)
+and guesses `p̂`. Results depend heavily on these settings: in the default room the bots underbid so the
+top slot is lucrative, which may not hold against real players. Re-run the harness under several bot
+settings before trusting a conclusion.
+
+## c) Monte Carlo comparison
+
+`python -m scavenger.montecarlo -s <spec> <spec> ... -r <rounds>` plays every strategy on the same rounds
+(same setups, bots, sample stream) and reports **mean placement** (what the game ranks on), P(1st),
+points/p split into auctions / guess / sample cost, and average `n`. Specs are documented at the top of
+`strategies.py`. Note that the strategy's opponent model (`opp_lo`, `opp_hi`, `opp_noise`) is separate
+from the bots (`--bot-*`), so you can test what a wrong belief about the room costs.
+
+## First results (default prior, default bots — treat as provisional)
+
+Full-game harness, 200 rounds, identical rounds for every strategy:
+
+| strategy | placement | P(1st) | pts/p | auctions/p | guess/p | cost/p |
+|---|---|---|---|---|---|---|
+| bayes:n=0 | 2.93 | 50% | 0.32 | 0.20 | 0.12 | 0.00 |
+| bayes:n=1 | 2.06 | 65% | 1.13 | 1.08 | 0.14 | 0.08 |
+| bayes:n=2 | 1.97 | 68% | 1.30 | 1.25 | 0.17 | 0.12 |
+| bayes:n=3 | 1.88 | 69% | 1.34 | 1.31 | 0.17 | 0.14 |
+| bayes:n=5 | **1.81** | 74% | 1.41 | 1.41 | 0.19 | 0.19 |
+| bayes:n=7 | 1.87 | 73% | 1.38 | 1.40 | 0.20 | 0.22 |
+| bayes:n=10 | 1.88 | 73% | 1.36 | 1.43 | 0.20 | 0.26 |
+| naive:n=3 | 3.46 | 12% | 0.42 | 0.48 | 0.08 | 0.14 |
+
+Takeaways:
+* **For the final guess alone, samples barely pay.** With `--mult 0` the batch table says buy 0–2: going
+  from 1 to 10 samples lifts the guess score from ~9% to ~18% of p, and that costs 17% more of p.
+* **Samples pay through the auctions.** Knowing p well is what lets you take the top slot without
+  overshooting. Against these bots, n ≈ 3–7 is a flat optimum (n=5 is best but within noise), and
+  the auctions are worth several times the guess. The default bots underbid (≤ 0.5·p̂), so the top slot
+  is very lucrative. Against tougher opponents this will shrink, so re-test with other `--bot-*` settings.
+* The shipped table uses `--mult 1` (best n ≈ 3–4 overall). The per-percentile rows are noisy
+  (s.e. ≈ 0.5–1.2% of p), so trust the `all` row more than individual buckets until you rerun with more trials.
+* Sequential lookahead (`bayes:seq=1,n0=2,mult=3`) over-bought (avg n 7.7) and was not better than a fixed
+  n=5 in a 60-round test. Its `mult` needs tuning, and it is slow (~seconds per decision).
+* Learning from auction results helps: `learn=0` lost about 0.2 placement in an 80-round test.
+
+## Questions for the organisers
+
+1. Can samples be bought one at a time (buy, look, buy more), or only once as a batch?
+2. Is the percentile `round(100·F(p))` (so the true value is within ±0.5 points)? How is it defined for two-point (discrete) pools?
+3. Are samples and the pool size integers?
+4. Does the post-auction "rank" count from the lowest bid or the highest? How are tied bids ordered?
+5. Can the pool size be negative (e.g. a normal with a large σ)?
