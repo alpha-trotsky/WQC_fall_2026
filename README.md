@@ -136,6 +136,35 @@ Takeaways:
   n=5 in a 60-round test. Its `mult` needs tuning, and it is slow (~seconds per decision).
 * Learning from auction results helps: `learn=0` lost about 0.2 placement in an 80-round test.
 
+## Recommended strategy (current best guess)
+
+1. **Buy 3 samples.** 3–5 were all close in every room tested, 1 is clearly worse, and fewer samples win ties.
+   If you can buy one at a time: 2, look, usually a 3rd; 4–5 only if the samples look confusing.
+2. **Final guess:** the model's guess (maximises expected guess points, not the mean or median).
+3. **Auctions: learn the room, then pick an end.** Bottom three get their bid, the top bidder gets
+   R − |R − b| (R = p minus the three lowest bids), and everyone in between gets 0.
+   In a timid room, go for the top and bid about R. In an aggressive room, bid low and stay in the
+   bottom three. Use auction 1 to learn; auction 3 counts double. If you were top and got less than your bid,
+   R = (payout + bid)/2 exactly.
+4. **On the day:** `python -m scavenger.advisor`. It runs `bayes:n=3,adapt=1`: it scores 10 candidate rooms
+   (a 3×3 grid of opponents bidding p·U(lo, hi), plus a mixed room) by how well each explains your
+   ranks and payouts, bids against the blend, and carries that across rounds.
+
+Why adapt: with **fixed** beliefs about the room, being wrong is very costly (placement, lower is better):
+
+| room \ model believes | timid (0–50%) | aggressive (30–120%) | adaptive, 3 rooms | adaptive, 10 rooms |
+|---|---|---|---|---|
+| timid 0–50% | 1.98 | 3.69 | 1.89 | 2.22 |
+| mixed | 2.71 | 3.80 | 2.47 | 2.62 |
+| aggressive 30–120% | 4.39 | 1.41 | 1.35 | 1.27 |
+| in-between 20–80% | 5.50 | – | 3.99 | 1.79 |
+| off-grid 10–60% | – | – | – | 2.93 |
+| fair share 5–25% | – | – | – | 0.98 |
+
+The 10-room version gives up ~0.15–0.3 in the rooms the 3-room version already modelled, but removes
+the disaster in rooms between them. The weak spot left is the 10–60% room (2.93).
+All numbers are against bots; real players will differ. Scripts: `results/run_adaptive*.sh`.
+
 ## Unresolved rules (the packet doesn't say)
 
 Each one is a setting, separately for the simulated game (`--truth-*` flags on `montecarlo`) and for
