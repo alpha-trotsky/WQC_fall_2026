@@ -1,4 +1,9 @@
-# WQC Fall 2026 — Scavenger toolkit
+# WQC Fall 2026 toolkit
+
+1. [Game 1 — Scavenger](#game-1--scavenger)
+2. [Game 2 — Baskets](#game-2--baskets)
+
+# Game 1 — Scavenger
 
 Tools for the **Scavenger** game (packet pp. 5–7): a Bayesian estimator for the pool size `p`,
 a playable simulator of the game, and a Monte Carlo harness to compare strategies.
@@ -151,3 +156,50 @@ Scripts and full output: `results/run_*.sh`, `results/sensitivity*.txt` (300 rou
 
 Still open, and the most important: **can samples be bought one at a time?** (see "Converting to one-at-a-time buying").
 Is the pool size itself an integer? (Barely matters: the guess is scored on a scale of p/4.)
+
+# Game 2 — Baskets
+
+Packet pp. 8–9. Three baskets: GRID = TEK + NRG, CURE = TEK + MED, SAFE = NRG + MED.
+The indices start at $200 and **only the event bots move them**. Teams, customers and makers don't
+affect settlement.
+
+## Approach: react to the move, don't track fair value
+
+Keeping an exact fair value while trading isn't realistic in a live game. The game is about
+**spotting when an event move happens in one basket and immediately trading the other two in
+the same direction.** Because every index sits in two baskets, an event in one basket moves the
+fair value of the other two, and they reprice more slowly than the basket the event hits.
+
+The rule, from the settlement formulas:
+
+> **Whatever basket the event hits moves by Δ; the other two should move by Δ/2, same direction.**
+
+| event in | GRID | CURE | SAFE |
+|---|---|---|---|
+| GRID (impact doubled) | Δ | Δ/2 | Δ/2 |
+| CURE | Δ/2 | Δ | Δ/2 |
+| SAFE | Δ/2 | Δ/2 | Δ |
+
+(Per share of event volume: a GRID event moves GRID $0.02 and the others $0.01. A CURE or SAFE
+event moves its own basket $0.01 and the others $0.005.)
+
+So it's a two-person game: one person spots the move, and both trade the other two baskets.
+We haven't picked an exact split yet. The options:
+
+- **Watch one, react on two.** Each person watches a single basket. When it moves, they call it
+  out and the team trades the other two baskets. Simple and fast, but three baskets don't divide
+  evenly between two people.
+- **Watch all, react on all.** Both people watch all three books, and whoever sees the move first
+  trades the other two. More coverage, but more to look at.
+
+Other things to keep in mind:
+- Don't sit in the path of an event with tight quotes. Event flow is toxic, and tighter quotes make
+  the event bot trade bigger.
+- Events are a long sequence of orders in one direction, so once a move starts, expect it to keep going.
+
+## Optional: fair-value tracker
+
+`python baskets/fair.py`. Type the basket letter plus how much it moved (`g 4`, `c -3`, `s2.5`;
+`u` undo, `r` reset, `q` quit). It keeps a running fair value for all three baskets and shows what
+the last move implies for the other two. Probably a distraction while trading under the approach
+above, but useful for practice or as a third screen.
