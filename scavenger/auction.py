@@ -69,12 +69,11 @@ class OpponentModel:
         return np.maximum(np.round(est * rng.uniform(lo, hi, est.shape) + self.add_b), 0)
 
 
-# Candidate rooms for the adaptive strategy (fractions of p each opponent bids).
-ROOM_MODELS = {
-    "timid": OpponentModel(0.0, 0.5),
-    "mixed": OpponentModel(mix=((0.4, 0.0, 0.15), (0.4, 0.1, 0.3), (0.2, 0.6, 1.0))),
-    "aggressive": OpponentModel(0.3, 1.2),
-}
+# Candidate rooms for the adaptive strategy: each opponent bids p * U(lo, hi) (fractions of p).
+# A 3x3 grid from timid to aggressive, plus a mixed room of low bidders and a few top-chasers.
+ROOM_MODELS = {f"U({lo:g}-{hi:g})": OpponentModel(lo, hi)
+               for lo in (0.0, 0.15, 0.3) for hi in (0.4, 0.8, 1.2)}
+ROOM_MODELS["mixed"] = OpponentModel(mix=((0.4, 0.0, 0.15), (0.4, 0.1, 0.3), (0.2, 0.6, 1.0)))
 
 
 class OpponentMixture:

@@ -17,7 +17,7 @@ and the assumptions about unresolved rules (see README):
     shapes=default parameter-range preset: default | wide | narrow (families.SHAPE_PRESETS)
     mlo=1,mhi=1e6  range of the base pool scale M the model considers (the game default is 50-5000;
                    a model range narrower than reality is catastrophic, a wider one costs ~nothing)
-    adapt=1        learn which kind of room you are in (timid / mixed / aggressive, auction.ROOM_MODELS)
+    adapt=1        learn which kind of room you are in (10 candidates, auction.ROOM_MODELS)
                    from your ranks and payouts, carried across rounds; bid against the blend
     rank=auto      auction rank counts from the lowest bid (low), highest (high), or
                    auto = infer it from how well each reading explains the payouts
@@ -113,21 +113,25 @@ class BayesStrategy:
         """Learn from (rank, payout): which way the rank counts, what room this is, and p."""
         if not self.learn:
             return
-        dirs = ["low", "high"] if self.rank_from == "auto" else [self.rank_from]
+        if self.rank_from == "auto":
+            gap = self.rank_evidence["low"] - self.rank_evidence["high"]
+            # once one reading is clearly ahead, stop paying to evaluate the other
+            dirs = ["low", "high"] if abs(gap) < 6 else (["low"] if gap > 0 else ["high"])
+        else:
+            dirs = [self.rank_from]
         models = [ROOM_MODELS[n] for n in self.room_names] if self.adapt else [self.opp]
         logpi = np.log(self.room_weights()) if self.adapt else np.zeros(1)
         ll, ev = {}, {}
         for d in dirs:
             r = rank if d == "low" else self.room + 1 - rank
             for j, m in enumerate(models):
-                ll[d, j] = auction_loglik(self.post, self.room, m, bid, r, payout, self.rng)
+                ll[d, j] = auction_loglik(self.post, self.room, m, bid, r, payout, self.rng,
+                                          n_sims=24 if self.adapt else 48)
                 ev[d, j] = float(logsumexp(self.post.logw + ll[d, j]))
-        if self.rank_from == "auto":
+        if len(dirs) == 2:
             for d in dirs:
                 self.rank_evidence[d] += float(logsumexp([logpi[j] + ev[d, j] for j in range(len(models))]))
-            d = max(self.rank_evidence, key=self.rank_evidence.get)
-        else:
-            d = dirs[0]
+        d = max(self.rank_evidence, key=self.rank_evidence.get) if len(dirs) == 2 else dirs[0]
         if self.adapt:
             self.room_logev += np.array([ev[d, j] for j in range(len(models))])
             # Cap how sure we can get (the candidate rooms are only caricatures of real ones):
