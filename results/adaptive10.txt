@@ -1,0 +1,2 @@
+## n=3, adapt=1 (10 candidate rooms)
+TIMID 0-50%:
