@@ -53,7 +53,7 @@ def main():
         room = ask("players in the room [7]: ", int, 7)
         strat.start_round(k, room, np.random.default_rng())
         hint = f"table says {best_n_lookup(table, k)}; " if table else ""
-        print(f"suggested n: 3 ({hint}3-5 all tested well, 3 is the robust choice)")
+        print(f"suggested n: 5 ({hint}full-game harness: 4-7 beat 2-3 in every room, 5 best on points; results/choose_n.txt)")
         xs = [float(v) for v in input("samples you got (space separated): ").split()]
         strat.observe_samples(xs)
         print(strat.post.summary())

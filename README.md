@@ -138,8 +138,22 @@ Takeaways:
 
 ## Recommended strategy (current best guess)
 
-1. **Buy 3 samples.** 3–5 were all close in every room tested, 1 is clearly worse, and fewer samples win ties.
-   If you can buy one at a time: 2, look, usually a 3rd; 4–5 only if the samples look confusing.
+1. **Buy 5 samples, all at once** (the organisers confirmed you cannot buy one at a time).
+   Full-game rerun, `adapt=1`, 5 rooms × 150 rounds (`results/run_choose_n.sh`, output in `results/choose_n.txt`):
+
+   | mean placement | n=2 | n=3 | n=4 | n=5 | n=7 |
+   |---|---|---|---|---|---|
+   | timid 0–50% | 2.21 | 2.30 | 2.12 | 2.18 | **1.95** |
+   | mixed | 2.57 | 2.52 | **2.48** | 2.53 | 2.56 |
+   | aggressive 30–120% | 1.32 | 1.33 | 1.26 | **1.18** | 1.20 |
+   | middling 20–80% | 1.92 | 1.82 | 1.78 | 1.82 | **1.78** |
+   | fair share 5–25% | 1.07 | 1.00 | 1.05 | 0.97 | **0.96** |
+   | **average** | 1.82 | 1.79 | 1.74 | 1.74 | **1.69** |
+   | avg points / p | 1.35 | 1.38 | 1.40 | **1.43** | 1.40 |
+
+   4–7 beat 2–3, but 4, 5 and 7 are within noise of each other (one standard error is about 0.05–0.16 per cell).
+   5 wins on points and is never the worst cell; 7 has the best average placement but drops on points in the
+   fair-share room. Either is defensible; 5 is the pick.
 2. **Final guess:** the model's guess (maximises expected guess points, not the mean or median).
 3. **Auctions: learn the room, then pick an end.** Bottom three get their bid, the top bidder gets
    R − |R − b| (R = p minus the three lowest bids), and everyone in between gets 0.
