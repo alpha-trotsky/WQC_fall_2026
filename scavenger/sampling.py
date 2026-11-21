@@ -27,25 +27,25 @@ def guess_frac(p_true, g):
 
 
 def batch_table(prior_truth=None, prior_est=None, n_max=10, trials=600, seed=0,
-                n_particles=3000, delta=1.0, progress=True):
+                n_particles=3000, delta=None, progress=True):
     """Monte Carlo of guess score/p for n = 0..n_max with common random numbers.
 
     Returns dict with arrays: pct [trials], score [trials, n_max+1].
     """
     prior_truth = prior_truth or F.PriorConfig()
     prior_est = prior_est or prior_truth
+    delta = prior_truth.delta if delta is None else delta
     rng = np.random.default_rng(seed)
     pct = np.zeros(trials, int)
     score = np.zeros((trials, n_max + 1))
     for t in range(trials):
         fam, par = F.draw_truth(prior_truth, rng)
         q = rng.random()
-        p = F.scalar_ppf(fam, par, q)
-        k = int(np.clip(np.round(q * 100), 0, 100))
+        k, p = F.display_percentile(fam, par, q, prior_truth.twopoint_pct)
         xs = np.round(F.scalar_sample(fam, par, n_max, rng) / delta) * delta
         pct[t] = k
         for n in range(n_max + 1):
-            post = Posterior.fit(xs[:n], k, prior_est, n_particles=n_particles, delta=delta, rng=rng)
+            post = Posterior.fit(xs[:n], k, prior_est, n_particles=n_particles, rng=rng)
             g, _ = post.best_guess()
             score[t, n] = guess_frac(p, g) if p > 0 else 0.0
         if progress and (t + 1) % 50 == 0:
@@ -91,12 +91,14 @@ def best_n_lookup(best, percentile):
 
 
 def lookahead_decision(post, samples, percentile, prior, rng, max_ahead=3, K=48,
-                       n_particles=2000, delta=1.0, auction_mult=0.0):
+                       n_particles=2000, delta=None, auction_mult=0.0):
     """Should we buy another sample? Checks buying 1..max_ahead more (catches the case
     where one more sample cannot separate families but three can).
 
     Returns (buy: bool, info dict). Gains and costs are in points (same units as p).
     """
+    prior = prior or F.PriorConfig()
+    delta = prior.delta if delta is None else delta
     n = len(samples)
     _, base = post.best_guess()
     Ep = post.p_mean()
@@ -108,7 +110,7 @@ def lookahead_decision(post, samples, percentile, prior, rng, max_ahead=3, K=48,
             fam, par = post.particle(i)
             new = np.round(F.scalar_sample(fam, par, k, rng) / delta) * delta
             p2 = Posterior.fit(np.concatenate([samples, new]), percentile, prior,
-                               n_particles=n_particles, delta=delta, rng=rng)
+                               n_particles=n_particles, rng=rng)
             vals.append(p2.best_guess()[1])
         gains[k] = (np.mean(vals) - base) * (1 + auction_mult)
     costs = {k: (cost(n + k) - cost(n)) * Ep for k in gains}

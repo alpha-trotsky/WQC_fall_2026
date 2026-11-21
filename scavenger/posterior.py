@@ -38,7 +38,7 @@ def _log_logistic(u):
 
 
 class Posterior:
-    def __init__(self, groups, percentile, rng, n_data):
+    def __init__(self, groups, percentile, rng, n_data, tp_mode="random"):
         # groups: list of dict(fam, par, logc) where sum(exp(logc)) = P(data | fam)
         self.percentile = percentile
         self.n_data = n_data
@@ -49,6 +49,9 @@ class Posterior:
             N = len(g["logc"])
             q = rng.uniform(q_lo, q_hi, N)
             g["p"] = F.ppf(g["fam"], g["par"], q)
+            if g["fam"] == "twopoint" and tp_mode != "random":
+                g["p"], extra = _twopoint_display(g["par"], percentile, tp_mode, q_hi - q_lo, rng)
+                g["logc"] = g["logc"] + extra
             ps.append(g["p"])
             fams.append(np.full(N, gi))
             logw.append(g["logc"] + np.log(g["prior_f"]))
@@ -63,8 +66,9 @@ class Posterior:
     # ---------------------------------------------------------------- fitting
     @classmethod
     def fit(cls, samples, percentile, prior: PriorConfig | None = None,
-            n_particles=6000, delta=1.0, rng=None, n_iter=3):
+            n_particles=6000, delta=None, rng=None, n_iter=3):
         prior = prior or PriorConfig()
+        delta = prior.delta if delta is None else delta
         rng = rng if rng is not None else np.random.default_rng()
         x = np.asarray(samples, float)
         groups = []
@@ -81,8 +85,10 @@ class Posterior:
                 par, logc = _fit_continuous(fam, x, prior, n_particles, delta, rng, n_iter)
             if par is None:
                 continue
+            if len(x):  # evidence under the positivity-constrained (renormalised) prior
+                logc = logc - np.log(F.acceptance(fam, prior))
             groups.append({"fam": fam, "par": par, "logc": logc, "prior_f": pf})
-        return cls(groups, percentile, rng, len(x))
+        return cls(groups, percentile, rng, len(x), prior.twopoint_pct)
 
     # ---------------------------------------------------------------- summaries
     @property
@@ -168,6 +174,27 @@ class Posterior:
         return "\n".join(lines)
 
 
+def _twopoint_display(par, k, mode, window, rng):
+    """Deterministic two-point percentile conventions: which of L/H is consistent with the
+    displayed k, and how much more (or less) likely k is than under a continuous family.
+
+    Returns (p per particle, log likelihood ratio vs. the continuous-family baseline `window`).
+    """
+    q = par["q"]
+    nat = F.natural("twopoint", par)
+    cL, cH = {"cdf": (q, np.ones_like(q)), "below": (np.zeros_like(q), q),
+              "mid": (q / 2, (1 + q) / 2)}[mode]
+    mL = np.round(100 * cL) == k
+    mH = np.round(100 * cH) == k
+    PL, PH = q * mL, (1 - q) * mH
+    tot = PL + PH
+    pick_L = rng.random(len(q)) * np.maximum(tot, 1e-300) < PL
+    p = np.where(pick_L, nat["L"], nat["H"])
+    with np.errstate(divide="ignore"):
+        extra = np.log(tot) - np.log(window)
+    return p, extra
+
+
 # ---------------------------------------------------------------------------
 # continuous families: adaptive importance sampling
 # ---------------------------------------------------------------------------
@@ -213,7 +240,9 @@ def _fit_continuous(fam, x, prior, N, delta, rng, n_iter):
         ok = np.isfinite(lp)
         out = np.full(len(V), -np.inf)
         if ok.any():
-            out[ok] = lp[ok] + F.loglik_continuous(fam, _to_par(fam, V[ok], prior), x, delta)
+            par = _to_par(fam, V[ok], prior)
+            ll = F.loglik_continuous(fam, par, x, delta)
+            out[ok] = lp[ok] + np.where(F.allowed(fam, par, prior), ll, -np.inf)
         return out
 
     V = q0_sample(N)

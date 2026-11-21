@@ -1,0 +1,40 @@
+### truth: two-point percentile = cdf (H always shows 100)
+strategy                           placement     ±  P(1st)   pts/p      ±  auct/p  guess/p  cost/p  avg n
+---------------------------------------------------------------------------------------------------------
+bayes:n=3                              2.020  0.11   68.3%   1.209  0.064   1.181    0.173   0.144   3.00
+bayes:n=3,tp=cdf                       1.913  0.10   70.0%   1.306  0.058   1.276    0.175   0.144   3.00
+placement: mean rank in room (1 = best, x0.875 in rooms of 7) - this is what the game scores.
+pts/p: round points as a fraction of the pool. ± = one standard error.
+
+### truth: two-point percentile = below (L always shows 0)
+strategy                           placement     ±  P(1st)   pts/p      ±  auct/p  guess/p  cost/p  avg n
+---------------------------------------------------------------------------------------------------------
+bayes:n=3                              1.953  0.10   68.7%   1.268  0.058   1.237    0.175   0.144   3.00
+bayes:n=3,tp=below                     1.938  0.10   69.3%   1.289  0.059   1.257    0.176   0.144   3.00
+placement: mean rank in room (1 = best, x0.875 in rooms of 7) - this is what the game scores.
+pts/p: round points as a fraction of the pool. ± = one standard error.
+
+### truth: samples are real-valued, not whole numbers
+strategy                           placement     ±  P(1st)   pts/p      ±  auct/p  guess/p  cost/p  avg n
+---------------------------------------------------------------------------------------------------------
+bayes:n=3                              1.975  0.10   68.0%   1.277  0.059   1.247    0.174   0.144   3.00
+bayes:n=3,delta=1e-6                   1.982  0.10   67.7%   1.282  0.059   1.251    0.175   0.144   3.00
+placement: mean rank in room (1 = best, x0.875 in rooms of 7) - this is what the game scores.
+pts/p: round points as a fraction of the pool. ± = one standard error.
+
+### truth: negative pools allowed
+strategy                           placement     ±  P(1st)   pts/p      ±  auct/p  guess/p  cost/p  avg n
+---------------------------------------------------------------------------------------------------------
+bayes:n=3                              1.974  0.10   69.0%   1.279  0.059   1.249    0.174   0.144   3.00
+bayes:n=3,pos=none                     1.963  0.10   69.0%   1.287  0.060   1.259    0.173   0.144   3.00
+placement: mean rank in room (1 = best, x0.875 in rooms of 7) - this is what the game scores.
+pts/p: round points as a fraction of the pool. ± = one standard error.
+
+### truth: auction rank counts from the highest bid
+strategy                           placement     ±  P(1st)   pts/p      ±  auct/p  guess/p  cost/p  avg n
+---------------------------------------------------------------------------------------------------------
+bayes:n=3                              2.371  0.12   60.3%   0.724  0.115   0.770    0.098   0.144   3.00
+bayes:n=3,rank=high                    1.974  0.10   69.0%   1.279  0.059   1.250    0.174   0.144   3.00
+placement: mean rank in room (1 = best, x0.875 in rooms of 7) - this is what the game scores.
+pts/p: round points as a fraction of the pool. ± = one standard error.
+

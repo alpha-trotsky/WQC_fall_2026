@@ -42,6 +42,19 @@ class PriorConfig:
         "twopoint": {"d1": (0.10, 0.80), "d2": (0.10, 1.50), "q": (0.2, 0.8)},
     })
 
+    # ---- rules the packet leaves open (see README "Unresolved rules") ----
+    delta: float = 1.0
+    """Samples are rounded to this grid. 1 = whole numbers; use ~1e-6 for real-valued samples."""
+    twopoint_pct: str = "random"
+    """How the percentile of a two-point pool is reported.
+    random: a uniform point inside the jump of the CDF (as if ties were broken at random)
+    cdf:    100*P(X <= p)  ->  L shows 100q, H always shows 100
+    below:  100*P(X < p)   ->  L always shows 0, H shows 100q
+    mid:    100*(P(X<p)+P(X<=p))/2  ->  L shows 50q, H shows 50(1+q)"""
+    positive_tol: float | None = 0.01
+    """Only setups with P(X < 0) <= positive_tol are possible (organisers presumably avoid
+    negative pools). None = no constraint."""
+
     def log_m_bounds(self):
         return np.log(self.m_range[0]), np.log(self.m_range[1])
 
@@ -143,12 +156,72 @@ def sample(fam, par, size, rng):
     return ppf(fam, rep, u.ravel()).reshape(N, size)
 
 
-def draw_prior(fam, prior: PriorConfig, N, rng):
+def prob_negative(fam, par):
+    """P(X < 0) for each particle."""
+    nat = natural(fam, par)
+    if fam == "normal":
+        return ndtr(-nat["mu"] / nat["sigma"])
+    if fam == "uniform":
+        return np.clip(-nat["a"] / (nat["b"] - nat["a"]), 0, 1)
+    if fam == "shexp":
+        return np.where(nat["m"] < 0, 1.0, 0.0)
+    if fam == "twohump":
+        return nat["w"] * ndtr(-nat["mu1"] / nat["s1"]) + (1 - nat["w"]) * ndtr(-nat["mu2"] / nat["s2"])
+    if fam == "twopoint":
+        return np.where(nat["L"] < 0, nat["q"], 0.0) + np.where(nat["H"] < 0, 1 - nat["q"], 0.0)
+    raise ValueError(fam)
+
+
+def allowed(fam, par, prior: PriorConfig):
+    if prior.positive_tol is None:
+        return np.ones(len(par["M"]), bool)
+    return prob_negative(fam, par) <= prior.positive_tol
+
+
+def _draw_box(fam, prior, N, rng):
     lo, hi = prior.log_m_bounds()
     par = {"M": np.exp(rng.uniform(lo, hi, N))}
     for k, (a, b) in prior.shapes[fam].items():
         par[k] = rng.uniform(a, b, N)
     return par
+
+
+def acceptance(fam, prior: PriorConfig):
+    """Fraction of the parameter box that the positivity constraint keeps (cached)."""
+    key = (fam, prior.positive_tol, repr(prior.shapes[fam]), prior.m_range)
+    if key not in _ACC:
+        par = _draw_box(fam, prior, 200_000, np.random.default_rng(12345))
+        _ACC[key] = max(float(allowed(fam, par, prior).mean()), 1e-6)
+    return _ACC[key]
+
+
+_ACC = {}
+
+
+def draw_prior(fam, prior: PriorConfig, N, rng):
+    """N draws from the (positivity-constrained) prior of one family, by rejection."""
+    out, have = [], 0
+    while have < N:
+        par = _draw_box(fam, prior, max(2 * (N - have), 64), rng)
+        ok = allowed(fam, par, prior)
+        out.append({k: v[ok] for k, v in par.items()})
+        have += int(ok.sum())
+    return {k: np.concatenate([o[k] for o in out])[:N] for k in out[0]}
+
+
+def display_percentile(fam, par, q, mode):
+    """True quantile q of the pool -> (displayed integer percentile, pool p).
+
+    For continuous families this is round(100q). For two-point it depends on `mode`
+    (see PriorConfig.twopoint_pct).
+    """
+    p = scalar_ppf(fam, par, q)
+    if fam != "twopoint" or mode == "random":
+        return int(np.clip(np.round(q * 100), 0, 100)), p
+    qL = par["q"]
+    is_low = q < qL
+    c = {"cdf": (qL, 1.0), "below": (0.0, qL), "mid": (qL / 2, (1 + qL) / 2)}[mode][0 if is_low else 1]
+    return int(np.round(100 * c)), p
 
 
 def draw_truth(prior: PriorConfig, rng):

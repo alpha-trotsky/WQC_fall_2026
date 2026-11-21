@@ -1,0 +1,16 @@
+### truth: rank counts from low
+strategy                           placement     ±  P(1st)   pts/p      ±  auct/p  guess/p  cost/p  avg n
+---------------------------------------------------------------------------------------------------------
+bayes:n=3,rank=low                     1.974  0.10   69.0%   1.279  0.059   1.250    0.174   0.144   3.00
+bayes:n=3,rank=auto                    1.992  0.10   67.3%   1.274  0.059   1.246    0.173   0.144   3.00
+
+### truth: rank counts from high
+strategy                           placement     ±  P(1st)   pts/p      ±  auct/p  guess/p  cost/p  avg n
+---------------------------------------------------------------------------------------------------------
+bayes:n=3,rank=high                    1.974  0.10   69.0%   1.279  0.059   1.250    0.174   0.144   3.00
+bayes:n=3,rank=auto                    1.981  0.10   67.7%   1.279  0.059   1.250    0.174   0.144   3.00
+
+### truth: two-point percentile = below
+strategy                           placement     ±  P(1st)   pts/p      ±  auct/p  guess/p  cost/p  avg n
+---------------------------------------------------------------------------------------------------------
+bayes:n=3,tp=cdf                       2.066  0.10   62.7%   1.159  0.056   1.147    0.157   0.144   3.00

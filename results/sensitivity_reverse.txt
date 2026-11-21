@@ -1,0 +1,10 @@
+### truth: defaults (whole numbers, random two-point percentile, rank from lowest)
+strategy                           placement     ±  P(1st)   pts/p      ±  auct/p  guess/p  cost/p  avg n
+---------------------------------------------------------------------------------------------------------
+bayes:n=3                              1.974  0.10   69.0%   1.279  0.059   1.250    0.174   0.144   3.00
+bayes:n=3,delta=1e-6                   1.991  0.10   68.0%   1.276  0.060   1.247    0.174   0.144   3.00
+bayes:n=3,tp=cdf                       1.964  0.10   66.3%   1.240  0.057   1.218    0.166   0.144   3.00
+bayes:n=3,tp=below                     2.104  0.11   65.7%   0.976  0.108   0.957    0.163   0.144   3.00
+bayes:n=3,rank=high                    2.371  0.12   60.3%   0.724  0.115   0.770    0.098   0.144   3.00
+placement: mean rank in room (1 = best, x0.875 in rooms of 7) - this is what the game scores.
+pts/p: round points as a fraction of the pool. ± = one standard error.

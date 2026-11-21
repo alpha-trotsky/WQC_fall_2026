@@ -17,6 +17,7 @@ import time
 
 import numpy as np
 
+from .families import PriorConfig
 from .game import BotConfig, GameConfig, play_round
 from .strategies import make_strategy
 
@@ -75,8 +76,17 @@ def main():
     ap.add_argument("--bot-hi", type=float, default=0.5)
     ap.add_argument("--bot-b", type=float, default=0.0)
     ap.add_argument("--bot-noise", type=float, default=0.35)
+    g = ap.add_argument_group("how the simulated game resolves the rules the packet leaves open")
+    g.add_argument("--truth-delta", type=float, default=1.0, help="sample rounding grid (1e-6 = real-valued)")
+    g.add_argument("--truth-tp", default="random", choices=["random", "cdf", "below", "mid"],
+                   help="two-point percentile convention")
+    g.add_argument("--truth-pos", default="0.01", help="max P(pool<0) of a setup; 'none' = no limit")
+    g.add_argument("--truth-rank", default="low", choices=["low", "high"], help="auction rank counts from")
     a = ap.parse_args()
-    cfg = GameConfig(bots=BotConfig(lo_frac=a.bot_lo, hi_frac=a.bot_hi, add_b=a.bot_b, est_noise=a.bot_noise))
+    truth = PriorConfig(delta=a.truth_delta, twopoint_pct=a.truth_tp,
+                        positive_tol=None if a.truth_pos == "none" else float(a.truth_pos))
+    cfg = GameConfig(truth_prior=truth, rank_from=a.truth_rank,
+                     bots=BotConfig(lo_frac=a.bot_lo, hi_frac=a.bot_hi, add_b=a.bot_b, est_noise=a.bot_noise))
     res = run(a.strategies, a.rounds, a.seed, cfg, a.workers)
     print()
     print(report(res))

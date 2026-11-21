@@ -34,7 +34,7 @@ class GameConfig:
     truth_prior: F.PriorConfig = field(default_factory=F.PriorConfig)
     bots: BotConfig = field(default_factory=BotConfig)
     room_sizes: tuple = (6, 7)
-    delta: float = 1.0          # samples are rounded to this grid (1 = integers)
+    rank_from: str = "low"      # rank shown after an auction: "low" (1 = lowest bid) or "high"
     max_samples: int = 30
 
 
@@ -46,9 +46,9 @@ class Round:
         self.rng_ties = r_ties
         self.fam, self.par = F.draw_truth(cfg.truth_prior, r_truth)
         self.q = r_truth.random()
-        self.p = max(F.scalar_ppf(self.fam, self.par, self.q), 0.0)
-        self.percentile = int(np.clip(np.round(self.q * 100), 0, 100))
-        d = cfg.delta
+        self.percentile, p = F.display_percentile(self.fam, self.par, self.q, cfg.truth_prior.twopoint_pct)
+        self.p = max(p, 0.0)
+        d = cfg.truth_prior.delta
         self._stream = np.round(F.scalar_sample(self.fam, self.par, cfg.max_samples, r_truth) / d) * d
         self.room_size = int(r_bots.choice(cfg.room_sizes))
         nb = self.room_size - 1
@@ -72,8 +72,9 @@ class Round:
         i = len(self.auctions)
         bids = np.concatenate([[max(int(hero_bid), 0)], self.bot_bids[i]])
         pay, ranks = payouts(bids, self.p, self.rng_ties)
-        res = {"bids": bids, "pay": pay, "ranks": ranks,
-               "hero_pay": float(pay[0]), "hero_rank": int(ranks[0])}
+        shown = ranks if self.cfg.rank_from == "low" else len(bids) + 1 - ranks
+        res = {"bids": bids, "pay": pay, "ranks": shown,
+               "hero_pay": float(pay[0]), "hero_rank": int(shown[0])}
         self.auctions.append(res)
         return res
 

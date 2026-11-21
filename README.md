@@ -136,10 +136,18 @@ Takeaways:
   n=5 in a 60-round test. Its `mult` needs tuning, and it is slow (~seconds per decision).
 * Learning from auction results helps: `learn=0` lost about 0.2 placement in an 80-round test.
 
-## Questions for the organisers
+## Unresolved rules (the packet doesn't say)
 
-1. Can samples be bought one at a time (buy, look, buy more), or only once as a batch?
-2. Is the percentile `round(100·F(p))` (so the true value is within ±0.5 points)? How is it defined for two-point (discrete) pools?
-3. Are samples and the pool size integers?
-4. Does the post-auction "rank" count from the lowest bid or the highest? How are tied bids ordered?
-5. Can the pool size be negative (e.g. a normal with a large σ)?
+Each one is a setting, separately for the simulated game (`--truth-*` flags on `montecarlo`) and for
+what a strategy assumes (spec options), so you can measure what a wrong guess costs.
+Scripts and full output: `results/run_*.sh`, `results/sensitivity*.txt` (300 rounds each, n=3, same rounds within a block).
+
+| question | default assumption | switch | cost of guessing wrong (mean placement) |
+|---|---|---|---|
+| Does the post-auction rank count from the lowest or highest bid? | **inferred** (`rank=auto`) | `rank=low\|high\|auto`, `--truth-rank` | Reading it backwards: 1.97 → **2.37**, the biggest effect found. `auto` scores each reading by how well it explains your payout and keeps the better one, at almost no cost (1.98–1.99 vs 1.97). On game day you will see which way it counts after one auction anyway (bid 0: you are the lowest bid). |
+| Percentile of a two-point pool (discrete, so F jumps)? | `random`: a uniform point inside the jump | `tp=random\|cdf\|below\|mid`, `--truth-tp` | If the game uses `cdf` (`P(X≤p)`: the high value always shows **100**), assuming `random` costs 2.02 vs 1.91. If it uses `below` (low value always shows **0**), assuming `random` costs ~nothing (1.95 vs 1.94). Wrongly assuming `below` costs 1.97 → 2.10, wrongly assuming `cdf` ~nothing → keep `random` unless you see evidence. **Tell:** a displayed percentile of exactly 100 or 0 with samples that look two-valued. |
+| Are samples whole numbers? | yes (`delta=1`: samples treated as rounded to integers) | `delta=1\|1e-6`, `--truth-delta` | No measurable difference either way (1.97–1.99). `delta=1` is the safer choice: if the samples are real numbers, it only merges values less than 0.5 apart. If they are integers and you assume real-valued, a repeated value from a narrow continuous distribution would be misread as two-point. |
+| Can the pool be negative? | no setup has more than 1% of its mass below 0 (`pos=0.01`) | `pos=0.01\|none`, `--truth-pos` | No measurable difference (1.97 vs 1.96). Under the default ranges, few setups have much mass below 0, and the simulator clamps p at 0. If a pool really were negative, every paid bidder would get min(b, R) < 0, so bidding 0 would be the only safe bid. Unlikely to be intended. |
+
+Still open, and the most important: **can samples be bought one at a time?** (see "Converting to one-at-a-time buying").
+Is the pool size itself an integer? (Barely matters: the guess is scored on a scale of p/4.)
