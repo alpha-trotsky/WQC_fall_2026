@@ -17,7 +17,7 @@ import time
 
 import numpy as np
 
-from .families import PriorConfig
+from .families import SHAPE_PRESETS, PriorConfig
 from .game import BotConfig, GameConfig, play_round
 from .strategies import make_strategy
 
@@ -76,17 +76,25 @@ def main():
     ap.add_argument("--bot-hi", type=float, default=0.5)
     ap.add_argument("--bot-b", type=float, default=0.0)
     ap.add_argument("--bot-noise", type=float, default=0.35)
+    ap.add_argument("--bot-mix", default="",
+                    help="mixed room, e.g. '0.4:0:0.15,0.4:0.1:0.3,0.2:0.6:1.0' = weight:lo:hi per archetype")
     g = ap.add_argument_group("how the simulated game resolves the rules the packet leaves open")
     g.add_argument("--truth-delta", type=float, default=1.0, help="sample rounding grid (1e-6 = real-valued)")
     g.add_argument("--truth-tp", default="random", choices=["random", "cdf", "below", "mid"],
                    help="two-point percentile convention")
     g.add_argument("--truth-pos", default="0.01", help="max P(pool<0) of a setup; 'none' = no limit")
+    g.add_argument("--truth-shapes", default="default", choices=["default", "wide", "narrow"])
+    g.add_argument("--truth-mlo", type=float, default=50)
+    g.add_argument("--truth-mhi", type=float, default=5000)
     g.add_argument("--truth-rank", default="low", choices=["low", "high"], help="auction rank counts from")
     a = ap.parse_args()
     truth = PriorConfig(delta=a.truth_delta, twopoint_pct=a.truth_tp,
-                        positive_tol=None if a.truth_pos == "none" else float(a.truth_pos))
+                        positive_tol=None if a.truth_pos == "none" else float(a.truth_pos),
+                        shapes=SHAPE_PRESETS[a.truth_shapes], m_range=(a.truth_mlo, a.truth_mhi))
+    mix = tuple(tuple(float(v) for v in part.split(":")) for part in a.bot_mix.split(",") if part)
     cfg = GameConfig(truth_prior=truth, rank_from=a.truth_rank,
-                     bots=BotConfig(lo_frac=a.bot_lo, hi_frac=a.bot_hi, add_b=a.bot_b, est_noise=a.bot_noise))
+                     bots=BotConfig(lo_frac=a.bot_lo, hi_frac=a.bot_hi, add_b=a.bot_b, est_noise=a.bot_noise,
+                                   mix=mix))
     res = run(a.strategies, a.rounds, a.seed, cfg, a.workers)
     print()
     print(report(res))

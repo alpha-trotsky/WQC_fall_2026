@@ -53,12 +53,47 @@ class OpponentModel:
     hi_frac: float = 0.4
     est_noise: float = 0.25
     add_b: float = 0.0
+    mix: tuple = ()  # optional ((weight, lo, hi), ...): each opponent picks an archetype
 
     def draw(self, p, n_opp, rng):
         """p: array [S] -> opponent bids [S, n_opp]."""
         p = np.asarray(p, float)[:, None]
         est = p * np.exp(rng.normal(0, self.est_noise, (len(p), n_opp)))
-        return np.maximum(np.round(est * rng.uniform(self.lo_frac, self.hi_frac, est.shape) + self.add_b), 0)
+        if self.mix:
+            w = np.array([m[0] for m in self.mix], float)
+            arch = rng.choice(len(self.mix), est.shape, p=w / w.sum())
+            lo = np.array([m[1] for m in self.mix])[arch]
+            hi = np.array([m[2] for m in self.mix])[arch]
+        else:
+            lo, hi = self.lo_frac, self.hi_frac
+        return np.maximum(np.round(est * rng.uniform(lo, hi, est.shape) + self.add_b), 0)
+
+
+# Candidate rooms for the adaptive strategy (fractions of p each opponent bids).
+ROOM_MODELS = {
+    "timid": OpponentModel(0.0, 0.5),
+    "mixed": OpponentModel(mix=((0.4, 0.0, 0.15), (0.4, 0.1, 0.3), (0.2, 0.6, 1.0))),
+    "aggressive": OpponentModel(0.3, 1.2),
+}
+
+
+class OpponentMixture:
+    """Several candidate rooms with weights: each simulated auction draws its room from them."""
+
+    def __init__(self, models, weights):
+        self.models = list(models)
+        w = np.asarray(weights, float)
+        self.weights = w / w.sum()
+
+    def draw(self, p, n_opp, rng):
+        p = np.asarray(p, float)
+        which = rng.choice(len(self.models), len(p), p=self.weights)
+        out = np.empty((len(p), n_opp))
+        for i, m in enumerate(self.models):
+            sel = which == i
+            if sel.any():
+                out[sel] = m.draw(p[sel], n_opp, rng)
+        return out
 
 
 def _our_payout(b, p, opp_sorted, cum_rem):

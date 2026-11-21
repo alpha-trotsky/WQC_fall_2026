@@ -14,6 +14,11 @@ and the assumptions about unresolved rules (see README):
     delta=1        samples are whole numbers (use 1e-6 for real-valued samples)
     tp=random      two-point percentile convention: random | cdf | below | mid
     pos=0.01       max P(pool < 0) a setup may have; pos=none allows anything
+    shapes=default parameter-range preset: default | wide | narrow (families.SHAPE_PRESETS)
+    mlo=1,mhi=1e6  range of the base pool scale M the model considers (the game default is 50-5000;
+                   a model range narrower than reality is catastrophic, a wider one costs ~nothing)
+    adapt=1        learn which kind of room you are in (timid / mixed / aggressive, auction.ROOM_MODELS)
+                   from your ranks and payouts, carried across rounds; bid against the blend
     rank=auto      auction rank counts from the lowest bid (low), highest (high), or
                    auto = infer it from how well each reading explains the payouts
 """
@@ -26,7 +31,7 @@ import numpy as np
 from scipy.special import logsumexp
 
 from . import families as F
-from .auction import OpponentModel, auction_loglik, best_bid
+from .auction import ROOM_MODELS, OpponentMixture, OpponentModel, auction_loglik, best_bid
 from .posterior import Posterior
 from .sampling import best_n_lookup, lookahead_decision
 
@@ -41,7 +46,7 @@ def load_table(path=TABLE_PATH):
 class BayesStrategy:
     def __init__(self, n=3, seq=False, n0=2, bid="model", frac=0.1, learn=True, mult=0.0,
                  opp=None, risk=0.0, particles=4000, prior=None, table=None,
-                 rank_from="auto", name=None):
+                 rank_from="auto", adapt=False, room_decay=0.7, name=None):
         self.n, self.sequential, self.n0 = n, seq, n0
         self.bid_mode, self.frac, self.learn, self.mult = bid, frac, learn, mult
         self.opp = opp or OpponentModel()
@@ -49,6 +54,11 @@ class BayesStrategy:
         self.prior = prior or F.PriorConfig()
         self.delta = self.prior.delta
         self.rank_from = rank_from
+        # adaptive room model: running log-evidence for each candidate room, kept across rounds
+        self.adapt = adapt
+        self.room_decay = room_decay
+        self.room_names = list(ROOM_MODELS)
+        self.room_logev = np.zeros(len(self.room_names))
         self.table = table
         self.name = name or "bayes"
 
@@ -57,6 +67,7 @@ class BayesStrategy:
         self.samples = np.array([])
         self.post = None
         self.rank_evidence = {"low": 0.0, "high": 0.0}
+        self.room_logev *= self.room_decay  # older rounds count less (rooms are reshuffled)
 
     def _refit(self):
         self.post = Posterior.fit(self.samples, self.k, self.prior, n_particles=self.particles,
@@ -80,31 +91,50 @@ class BayesStrategy:
             auction_mult=self.mult, K=24, n_particles=1500)
         return buy
 
+    def room_weights(self):
+        w = np.exp(self.room_logev - self.room_logev.max())
+        w = w / w.sum()
+        return 0.97 * w + 0.03 / len(w)  # always keep a little weight on every room
+
+    def _opp(self):
+        if not self.adapt:
+            return self.opp
+        return OpponentMixture([ROOM_MODELS[n] for n in self.room_names], self.room_weights())
+
     def bid(self, i):
         if self.bid_mode == "zero":
             return 0
         if self.bid_mode == "frac":
             return int(round(self.frac * self.post.p_quantiles(0.5)[0]))
-        b, _ = best_bid(self.post, self.room, self.opp, self.rng, risk_aversion=self.risk)
+        b, _ = best_bid(self.post, self.room, self._opp(), self.rng, risk_aversion=self.risk)
         return b
 
     def observe_auction(self, i, bid, rank, payout):
+        """Learn from (rank, payout): which way the rank counts, what room this is, and p."""
         if not self.learn:
             return
+        dirs = ["low", "high"] if self.rank_from == "auto" else [self.rank_from]
+        models = [ROOM_MODELS[n] for n in self.room_names] if self.adapt else [self.opp]
+        logpi = np.log(self.room_weights()) if self.adapt else np.zeros(1)
+        ll, ev = {}, {}
+        for d in dirs:
+            r = rank if d == "low" else self.room + 1 - rank
+            for j, m in enumerate(models):
+                ll[d, j] = auction_loglik(self.post, self.room, m, bid, r, payout, self.rng)
+                ev[d, j] = float(logsumexp(self.post.logw + ll[d, j]))
         if self.rank_from == "auto":
-            # Try both readings of the displayed rank; keep a running log-evidence for each
-            # and use whichever explains the auctions so far better.
-            lls = {d: auction_loglik(self.post, self.room, self.opp, bid,
-                                     rank if d == "low" else self.room + 1 - rank, payout, self.rng)
-                   for d in ("low", "high")}
-            for d, ll in lls.items():
-                self.rank_evidence[d] += float(logsumexp(self.post.logw + ll))
-            best = max(self.rank_evidence, key=self.rank_evidence.get)
-            self.post.reweight(lls[best])
-            return
-        if self.rank_from == "high":
-            rank = self.room + 1 - rank  # convert to 1 = lowest bid
-        self.post.reweight(auction_loglik(self.post, self.room, self.opp, bid, rank, payout, self.rng))
+            for d in dirs:
+                self.rank_evidence[d] += float(logsumexp([logpi[j] + ev[d, j] for j in range(len(models))]))
+            d = max(self.rank_evidence, key=self.rank_evidence.get)
+        else:
+            d = dirs[0]
+        if self.adapt:
+            self.room_logev += np.array([ev[d, j] for j in range(len(models))])
+            # Cap how sure we can get (the candidate rooms are only caricatures of real ones):
+            # no room falls more than e^-6 (~400x) behind the best, so it can come back.
+            self.room_logev = np.maximum(self.room_logev - self.room_logev.max(), -6.0)
+        mix_ll = logsumexp(np.stack([logpi[j] + ll[d, j] for j in range(len(models))]), axis=0)
+        self.post.reweight(mix_ll)
 
     def guess(self):
         return self.post.best_guess()[0]
@@ -159,7 +189,9 @@ def make_strategy(spec):
         return NaiveStrategy(n=kw.get("n", 3), frac=kw.get("frac", 0.2), name=spec)
     if kind == "bayes":
         prior = F.PriorConfig(delta=float(kw.pop("delta", 1.0)), twopoint_pct=kw.pop("tp", "random"),
-                              positive_tol=_tol(kw.pop("pos", 0.01)))
+                              positive_tol=_tol(kw.pop("pos", 0.01)),
+                              shapes=F.SHAPE_PRESETS[kw.pop("shapes", "default")],
+                              m_range=(float(kw.pop("mlo", 1)), float(kw.pop("mhi", 1e6))))
         opp = OpponentModel(lo_frac=kw.pop("opp_lo", 0.0), hi_frac=kw.pop("opp_hi", 0.4),
                             est_noise=kw.pop("opp_noise", 0.25))
         table = load_table() if kw.get("n") == "table" else None
@@ -168,5 +200,5 @@ def make_strategy(spec):
             bid=kw.get("bid", "model"), frac=kw.get("frac", 0.1), learn=bool(kw.get("learn", 1)),
             mult=kw.get("mult", 0.0), opp=opp, risk=kw.get("risk", 0.0),
             particles=kw.get("particles", 4000), table=table, prior=prior,
-            rank_from=kw.get("rank", "auto"), name=spec)
+            rank_from=kw.get("rank", "auto"), adapt=bool(kw.get("adapt", 0)), name=spec)
     raise ValueError(f"unknown strategy kind {kind!r}")

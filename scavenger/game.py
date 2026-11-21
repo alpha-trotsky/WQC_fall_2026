@@ -27,6 +27,9 @@ class BotConfig:
     add_b: float = 0.0
     est_noise: float = 0.35
     n_choices: tuple = (1, 2, 3, 4)
+    mix: tuple = ()
+    """Optional mixed room: ((weight, lo_frac, hi_frac), ...). Each bot picks one archetype per
+    round and keeps it for all three auctions. Overrides lo_frac/hi_frac when set."""
 
 
 @dataclass
@@ -55,8 +58,15 @@ class Round:
         b = cfg.bots
         self.bot_n = r_bots.choice(b.n_choices, nb)
         self.bot_est = self.p * np.exp(r_bots.normal(0, 1, nb) * b.est_noise / np.sqrt(self.bot_n))
+        if b.mix:
+            w = np.array([m[0] for m in b.mix], float)
+            arch = r_bots.choice(len(b.mix), nb, p=w / w.sum())
+            lo = np.array([b.mix[i][1] for i in arch])
+            hi = np.array([b.mix[i][2] for i in arch])
+        else:
+            lo, hi = np.full(nb, b.lo_frac), np.full(nb, b.hi_frac)
         self.bot_bids = np.maximum(np.round(
-            self.bot_est[None, :] * r_bots.uniform(b.lo_frac, b.hi_frac, (3, nb)) + b.add_b), 0)
+            self.bot_est[None, :] * r_bots.uniform(lo, hi, (3, nb)) + b.add_b), 0)
         self.hero_samples = []
         self.auctions = []  # list of dicts
 

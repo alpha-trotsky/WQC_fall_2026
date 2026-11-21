@@ -28,19 +28,40 @@ FAMILIES = ("normal", "uniform", "shexp", "twohump", "twopoint")
 LOG_SQRT_2PI = 0.5 * np.log(2 * np.pi)
 
 
+SHAPE_PRESETS = {
+    "default": {
+        "normal": {"s": (0.05, 0.40)},
+        "uniform": {"h": (0.05, 0.90)},
+        "shexp": {"e": (0.05, 1.00)},
+        "twohump": {"d": (0.10, 0.70), "s1": (0.03, 0.25), "s2": (0.03, 0.25), "w": (0.2, 0.8)},
+        "twopoint": {"d1": (0.10, 0.80), "d2": (0.10, 1.50), "q": (0.2, 0.8)},
+    },
+    # roughly twice as spread out as the default
+    "wide": {
+        "normal": {"s": (0.02, 1.00)},
+        "uniform": {"h": (0.02, 1.00)},
+        "shexp": {"e": (0.02, 3.00)},
+        "twohump": {"d": (0.05, 0.95), "s1": (0.01, 0.50), "s2": (0.01, 0.50), "w": (0.05, 0.95)},
+        "twopoint": {"d1": (0.05, 0.95), "d2": (0.05, 4.00), "q": (0.05, 0.95)},
+    },
+    # tighter, "textbook" setups
+    "narrow": {
+        "normal": {"s": (0.05, 0.20)},
+        "uniform": {"h": (0.10, 0.50)},
+        "shexp": {"e": (0.10, 0.50)},
+        "twohump": {"d": (0.20, 0.50), "s1": (0.05, 0.15), "s2": (0.05, 0.15), "w": (0.3, 0.7)},
+        "twopoint": {"d1": (0.20, 0.60), "d2": (0.20, 1.00), "q": (0.3, 0.7)},
+    },
+}
+
+
 @dataclass
 class PriorConfig:
     """Prior over hidden setups. All shape ranges are (lo, hi) for a uniform prior."""
 
     m_range: tuple = (50.0, 5000.0)          # base scale M, log-uniform
     family_weights: dict = field(default_factory=lambda: {f: 1.0 for f in FAMILIES})
-    shapes: dict = field(default_factory=lambda: {
-        "normal": {"s": (0.05, 0.40)},
-        "uniform": {"h": (0.05, 0.90)},
-        "shexp": {"e": (0.05, 1.00)},
-        "twohump": {"d": (0.10, 0.70), "s1": (0.03, 0.25), "s2": (0.03, 0.25), "w": (0.2, 0.8)},
-        "twopoint": {"d1": (0.10, 0.80), "d2": (0.10, 1.50), "q": (0.2, 0.8)},
-    })
+    shapes: dict = field(default_factory=lambda: SHAPE_PRESETS["default"])
 
     # ---- rules the packet leaves open (see README "Unresolved rules") ----
     delta: float = 1.0
