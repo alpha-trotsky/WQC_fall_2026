@@ -10,6 +10,7 @@ python -m scavenger.play --sequential            # same, buying samples one at a
 python -m scavenger.make_table --trials 2000     # (re)build the batch "how many samples" table
 python -m scavenger.montecarlo -s "bayes:n=1" "bayes:n=3" "bayes:n=table" "naive:n=3" -r 400
 python -m scavenger.advisor                      # competition-day helper: type in what the game shows you
+python -m scavenger.estimate 60 980 1210 1105    # one-shot: percentile then samples -> distribution of p + best guess
 ```
 
 ## Layout
