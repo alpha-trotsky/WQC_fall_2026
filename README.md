@@ -1,5 +1,8 @@
 # WQC Fall 2026 — Scavenger toolkit
 
+> **Vault:** live EV tracker for VAULT / PUB / G5, for takers and makers — see [`vault/README.md`](vault/README.md)
+> (`python -m vault.track --role taker|maker`).
+
 Tools for the **Scavenger** game (packet pp. 5–7): a Bayesian estimator for the pool size `p`,
 a playable simulator of the game, and a Monte Carlo harness to compare strategies.
 
